@@ -101,10 +101,13 @@ def broadcast_listener(socket, recv_pipe, send_pipe):
             hash = socket.recvfrom(512)
             #print(hash[0])
             hashes.append(hash)
+            #why is the next line never true
+            #print(recv_pipe.poll())
             if recv_pipe.poll():
-                print('sending hashes to main')
-                recv_pipe.recv_bytes(512)
+                #print('sending hashes to main')
+                #print(recv_pipe.recv())
                 for h in hashes:
+                    #print(h)
                     send_pipe.send(h)
     except KeyboardInterrupt:
         pass
@@ -144,7 +147,7 @@ def communication_manager(usersObj, hashedEmail, md5CheckSum, switch_ports=False
 
     broadcast_listener_worker = Process(target=broadcast_listener,
                                         name="broadcast_listener_worker",
-                                        args=(broadcast_socket, child_trans, child_recv, ))
+                                        args=(broadcast_socket, child_recv, child_trans, ))
 
     broadcast_sender_worker = Process(target=broadcast_sender,
                                       name="broadcast_sender_worker",
@@ -227,14 +230,24 @@ def communication_manager(usersObj, hashedEmail, md5CheckSum, switch_ports=False
                 #communication_manager()
                 
                 print('test list command')
-                parent_trans.send_bytes(b'list')
+                parent_trans.send([42, None, 'list'])
                 hashes = []
-                while parent_recv.poll():
-                    hashes.append(parent_recv.recv_bytes(512))
-                print(len(hashes))
-                for h in hashes:
+                #sleep(5)
+                do_loop = True
+                while do_loop:
+                    hashes.append(parent_recv.recv())
+                    #print(hashes)
+                    do_loop = parent_recv.poll()
+                #print(len(hashes))
+                #print(hashes)
+                res = []
+                for i in hashes:
+                    if i not in res:
+                        res.append(i)
+                for h in res:
+                    #print(h[0].decode('utf-8'))
                     if usersObj.doesContactExist(hashEmail(checkEmail), h[0].decode('utf-8')):
-                        print(usersObj.getContactName(email, h[0].decode('utf-8')))
+                        print(usersObj.getContactName(hashEmail(checkEmail), h[0].decode('utf-8')))
 		#contacts = usersObj.getContacts(checkEmail)
                 #for k in contacts.keys():
                     #add code here to check if remote user is online and has added user to contacts
@@ -535,6 +548,8 @@ class UserData:
             return {}
 
     def getContactName(self, email, contact):
+        #print(contact)
+        #print(self.data[email]['Contacts'])
         if self.doesContactExist(email, contact):
             return self.data[email]['Contacts'][contact]
         return False
