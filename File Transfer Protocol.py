@@ -52,6 +52,27 @@ class tcp_handler(BaseRequestHandler):
         print(self.data)
         self.request.sendall("ACK from server".encode())
 
+	#TODO alert user to incoming file and prompt for approval
+        # Receive the file
+        # set a socket connection timeout
+        connectionSocket.settimeout(5.0)
+        # create the file and open for writing
+        with open(filename, "wb") as f:
+            # print("file opened")
+            while True:
+                # print("in true")
+                try:
+                    bytes_read = connectionSocket.recv(1024)
+                    except error:
+                        print("nothing read in, break")
+                    break
+                print('data=%s', (bytes_read))
+                # write the contents to the file
+                f.write(bytes_read)
+            # print("quit while") # this line is for debugging
+            f.close()
+
+
 
 def tcp_listener(port):
     host = "localhost"
@@ -99,15 +120,9 @@ def broadcast_listener(socket, recv_pipe, send_pipe):
         hashes = collections.deque(maxlen=25)
         while True:
             hash = socket.recvfrom(512)
-            #print(hash[0])
             hashes.append(hash)
-            #why is the next line never true
-            #print(recv_pipe.poll())
             if recv_pipe.poll():
-                #print('sending hashes to main')
-                #print(recv_pipe.recv())
                 for h in hashes:
-                    #print(h)
                     send_pipe.send(h)
     except KeyboardInterrupt:
         pass
@@ -167,6 +182,8 @@ def communication_manager(usersObj, hashedEmail, md5CheckSum, switch_ports=False
             print("Starting: {}".format(p.name))
             p.start()
         exit_shell = False # Exits the while loop when not False
+        last_list_time = None
+	last_list = None
         while (exit_shell == False):
             # 'shell' prefix for each line
             textInput = input('$secure_drop>')
@@ -224,40 +241,32 @@ def communication_manager(usersObj, hashedEmail, md5CheckSum, switch_ports=False
                     
                 # Check checksum for changes
                 checkCheckSum(md5CheckSum)
-                # the following in the main code from Fabrizio at https://github.com/fabrizio8/network-example
-                # This should be used to find contacts, verify them, and find info for establishing
-                # a connection to do the transfer
-                #communication_manager()
                 
                 print('test list command')
                 parent_trans.send([42, None, 'list'])
                 hashes = []
-                #sleep(5)
                 do_loop = True
                 while do_loop:
                     hashes.append(parent_recv.recv())
-                    #print(hashes)
                     do_loop = parent_recv.poll()
-                #print(len(hashes))
-                #print(hashes)
                 res = []
                 for i in hashes:
                     if i not in res:
                         res.append(i)
                 for h in res:
-                    #print(h[0].decode('utf-8'))
                     if usersObj.doesContactExist(hashEmail(checkEmail), h[0].decode('utf-8')):
                         print(usersObj.getContactName(hashEmail(checkEmail), h[0].decode('utf-8')))
-		#contacts = usersObj.getContacts(checkEmail)
-                #for k in contacts.keys():
                     #add code here to check if remote user is online and has added user to contacts
-                 #   print(k)
-                
+                last_list = res
+                #update last_list_time with current time
+
             # Send command
             elif(textInput == 'send'):
                 # Check checksum for changes
                 checkCheckSum(md5CheckSum)
-                
+
+                #TODO prompt user for which contact to send to
+
                 # create a TCP socket for client (connection-oriented socket)
                 clientSocket = socket(AF_INET, SOCK_STREAM)
                 # connect the socket to the server
@@ -278,26 +287,7 @@ def communication_manager(usersObj, hashedEmail, md5CheckSum, switch_ports=False
                 # close the file
                 myfile.close()
                 
-                # Receive the file
-                # set a socket connection timeout
-                connectionSocket.settimeout(5.0)
-                # create the file and open for writing
-                with open(filename, "wb") as f:
-                    # print("file opened")
-                    while True:
-                        # print("in true")
-                        try:
-                            bytes_read = connectionSocket.recv(1024)
-                        except error:
-                            print("nothing read in, break")
-                            break
-                        print('data=%s', (bytes_read))
-                
-                        # write the contents to the file
-                        f.write(bytes_read)
-                    # print("quit while") # this line is for debugging
-                    f.close()
-                #print('test2')
+		
             
             # Help command
             elif(textInput == 'help'):
@@ -358,14 +348,6 @@ def loginAuthentication(usersObj, emailAddress, inputPassword):
     
 
     
-    #print('password hash')
-    #print(usersObj.getPasswordHash(emailAddress)[32:])
-    #print('password input hash')
-    #print(passwordHash[32:])
-    #print('is user registered')
-    #print(usersObj.isUserRegistered(emailAddress))
-    #print('do hashes equal?')
-    #print(usersObj.getPasswordHash(emailAddress)[32:] in passwordHash)
     if(usersObj.isUserRegistered(hashedEmail) and usersObj.getPasswordHash(hashedEmail)[32:] in passwordHash):
         return True #exits while loop
     else:
@@ -381,6 +363,8 @@ def hashPassword(password, salt) :
     storage = salt + hashResult #[:32] is salt [32:] is key
 
     return storage
+
+#TODO switch to encrypting the email rather than hashing it
 
 def hashEmail(email):
     hashResult = hashlib.pbkdf2_hmac('sha256', email.encode('utf-8'), bytes("email","utf-8"), 200000) #200,000 iterations for SHA algorithm
@@ -466,7 +450,6 @@ def newUser():
                     print("User did not input y/n")
                 
         else:
-           # print("Passwords Match.")
             # Hashes the password using SHA-256
             # Use passWdHashed[32:] to get the key
             # Use passWdHashed[:32] to get the salt
@@ -521,7 +504,6 @@ class UserData:
     
     #adds user data to JSON file. Gathers up all user info.
     def addUser(self, user):
-        #print( user['Email'])
         self.data[user['Email']] = user
         self.data[user['Email']]['Password'] = base64.b64encode(user['Password']).decode('utf-8')
         self.data[user['Email']]['Contacts'] = {}
@@ -548,8 +530,6 @@ class UserData:
             return {}
 
     def getContactName(self, email, contact):
-        #print(contact)
-        #print(self.data[email]['Contacts'])
         if self.doesContactExist(email, contact):
             return self.data[email]['Contacts'][contact]
         return False
@@ -639,9 +619,6 @@ def main():
     # Initializes main checksum
     md5CheckSum = getCheckSum()
     
-    #print("checksum after init:")
-    #print(md5CheckSum)
-    
     usersObj = UserData() #main user data in memory
     userList = not usersObj.isEmpty() # If there are no users in file 
     
@@ -666,8 +643,6 @@ def main():
             
                 # Update checksum
                 md5CheckSum = getCheckSum()
-                #print("checksum after added:")
-                #print(md5CheckSum)
                  
             userList = True #can be changed with user registration code (must not == False to exit loop)
         else:
@@ -683,8 +658,6 @@ def main():
         inputPassword = input('Password:')
         
         # Check checksum for changes
-        #print("checksum after login entered:")
-        #print(getCheckSum())
         checkCheckSum(md5CheckSum)
                 
          # Update the success variable       
