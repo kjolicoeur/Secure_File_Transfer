@@ -63,8 +63,8 @@ class tcp_handler(BaseRequestHandler):
                 # print("in true")
                 try:
                     bytes_read = connectionSocket.recv(1024)
-                    except error:
-                        print("nothing read in, break")
+                except error:
+                    print("nothing read in, break")
                     break
                 print('data=%s', (bytes_read))
                 # write the contents to the file
@@ -183,7 +183,7 @@ def communication_manager(usersObj, hashedEmail, md5CheckSum, switch_ports=False
             p.start()
         exit_shell = False # Exits the while loop when not False
         last_list_time = None
-	last_list = None
+        last_list = None
         while (exit_shell == False):
             # 'shell' prefix for each line
             textInput = input('$secure_drop>')
