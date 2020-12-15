@@ -20,7 +20,7 @@ from time import sleep
 from multiprocessing import Process, Pipe, Lock, Queue
 from socketserver import BaseRequestHandler, TCPServer
 import base64
-
+import collections
 
 # In[2]:
 
@@ -94,11 +94,18 @@ def tcp_client(port, data):
 #######################################
 #          Broadcast Example          #
 #######################################
-def broadcast_listener(socket):
+def broadcast_listener(socket, recv_pipe, send_pipe):
     try:
+        hashes = collections.deque(maxlen=25)
         while True:
-            data = socket.recvfrom(512)
-            print(data)
+            hash = socket.recvfrom(512)
+            #print(hash[0])
+            hashes.append(hash)
+            if recv_pipe.poll():
+                print('sending hashes to main')
+                recv_pipe.recv_bytes(512)
+                for h in hashes:
+                    send_pipe.send(h)
     except KeyboardInterrupt:
         pass
 
@@ -109,7 +116,7 @@ def broadcast_sender(port, hashedEmail):
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         while True:
-            msg = 'bcast_test: ' + str(count)
+            msg = hashedEmail
             count += 1
             s.sendto(msg.encode('ascii'), ('255.255.255.255', port))
             sleep(5)
@@ -134,9 +141,10 @@ def communication_manager(usersObj, hashedEmail, md5CheckSum, switch_ports=False
     parent_recv, child_trans = Pipe()
     child_recv, parent_trans = Pipe()
     
+
     broadcast_listener_worker = Process(target=broadcast_listener,
                                         name="broadcast_listener_worker",
-                                        args=(broadcast_socket,))
+                                        args=(broadcast_socket, child_trans, child_recv, ))
 
     broadcast_sender_worker = Process(target=broadcast_sender,
                                       name="broadcast_sender_worker",
@@ -151,7 +159,6 @@ def communication_manager(usersObj, hashedEmail, md5CheckSum, switch_ports=False
         broadcast_sender_worker,
         tcp_listener_worker,
     ]
-        
     try:
         for p in procs:
             print("Starting: {}".format(p.name))
@@ -192,7 +199,7 @@ def communication_manager(usersObj, hashedEmail, md5CheckSum, switch_ports=False
                 md5CheckSum = getCheckSum()
                 
                 # was the contact properly stored?
-                if(usersObj.doesContactExist(hashEmail(checkEmail), contact)):
+                if(usersObj.doesContactNameMatch(hashEmail(checkEmail), contact)):
                     print('Contact added to List')
                 else:
                     print('Failed to add contact')
@@ -220,7 +227,15 @@ def communication_manager(usersObj, hashedEmail, md5CheckSum, switch_ports=False
                 #communication_manager()
                 
                 print('test list command')
-                #contacts = usersObj.getContacts(checkEmail)
+                parent_trans.send_bytes(b'list')
+                hashes = []
+                while parent_recv.poll():
+                    hashes.append(parent_recv.recv_bytes(512))
+                print(len(hashes))
+                for h in hashes:
+                    if usersObj.doesContactExist(hashEmail(checkEmail), h[0].decode('utf-8')):
+                        print(usersObj.getContactName(email, h[0].decode('utf-8')))
+		#contacts = usersObj.getContacts(checkEmail)
                 #for k in contacts.keys():
                     #add code here to check if remote user is online and has added user to contacts
                  #   print(k)
@@ -518,13 +533,26 @@ class UserData:
             return self.data[email]['Contacts']
         else:
             return {}
+
+    def getContactName(self, email, contact):
+        if self.doesContactExist(email, contact):
+            return self.data[email]['Contacts'][contact]
+        return False
     
     #returns a boolean to check if the email address exists in contacts
     def doesContactExist(self, email, contact):
+        if self.isUserRegistered(email) and contact in self.data[email]['Contacts'].keys():
+            return True
+        else:
+            return False
+
+    def doesContactNameMatch(self, email, contact):
         if self.isUserRegistered(email) and contact['Email'] in self.data[email]['Contacts'].keys() and self.data[email]['Contacts'][contact['Email']] == contact['Name']:
             return True
         else:
             return False
+
+
     
     #adds contact to user data and writes to JSON
     def addContact(self, email, contact):
